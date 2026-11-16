@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Skripsi Morph Reel</title>
+<script src="vendor/flubber.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1080px;height:1920px;overflow:hidden;background:#F3EEE4}
+  body{font-family:"Inter Display","Inter",sans-serif;position:relative}
+  .mono{font-family:"JetBrains Mono",monospace}
+  .abs{position:absolute}
+  #stage{position:absolute;inset:0}
+  .field{position:absolute;inset:0}
+  #hud{position:absolute;left:64px;right:64px;top:96px;display:flex;justify-content:space-between;font-size:24px;letter-spacing:.2em;z-index:5}
+  #dots{position:absolute;left:64px;top:150px;display:flex;gap:14px;z-index:5}
+  #dots i{display:block;width:44px;height:6px;border-radius:3px}
+  .card{position:absolute;left:72px;right:72px;top:1130px;z-index:5}
+  .line{overflow:hidden;padding-bottom:.06em}
+  .line>span{display:inline-block;will-change:transform}
+  .tag{font-family:"JetBrains Mono",monospace;font-size:28px;letter-spacing:.22em;font-weight:700}
+  .title{font-size:112px;font-weight:900;letter-spacing:-.04em;line-height:1;margin-top:18px}
+  .sub{font-size:36px;font-weight:600;margin-top:22px;line-height:1.3}
+  #cap{position:absolute;left:64px;right:64px;top:1560px;z-index:6;text-align:center;font-weight:800;font-size:52px;line-height:1.25}
+  #cap span{display:inline-block;margin:0 .12em;padding:0 .1em;border-radius:8px}
+  #prog{position:absolute;left:0;bottom:0;height:8px;z-index:7}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="field" id="fieldA"></div>
+  <div class="field" id="fieldB"></div>
+  <svg id="svg" class="abs" width="1080" height="1920" viewBox="0 0 1080 1920" style="left:0;top:0">
+    <ellipse id="shadow" cx="540" cy="1010" rx="150" ry="18"/>
+    <g id="hero"><path id="pMain"/><path id="pSec"/></g>
+  </svg>
+</div>
+<div id="hud" class="mono"><span id="brand">CLAUDE × SKRIPSI</span><span id="cnt">00 / 05</span></div>
+<div id="dots"><i></i><i></i><i></i><i></i><i></i></div>
+<div id="cards"></div>
+<div id="cap"></div>
+<div id="prog"></div>
+
+<script>
+// ===================== timing (overridable by voice analysis) =====================
+const NARR = [
+  "Skripsi mentok terus? Kamu bisa pakai Claude AI sebagai asisten skripsi. Ini caranya!",
+  "Langkah satu. Cari ide topik. Ceritakan minat dan jurusanmu, lalu minta Claude memberi beberapa ide judul beserta rumusan masalahnya.",
+  "Langkah dua. Susun kerangka. Minta Claude membuat outline bab satu sampai bab lima, supaya alur penelitianmu jelas.",
+  "Langkah tiga. Pahami literatur. Unggah jurnal dalam bentuk PDF, lalu minta Claude merangkum temuan dan celah penelitiannya.",
+  "Langkah empat. Olah data. Claude bisa bantu memilih metode analisis, menjelaskan hasil statistik, dan menulis kode Python atau R.",
+  "Langkah lima. Review tulisanmu. Minta masukan soal struktur, tata bahasa, dan logika argumen. Lalu latihan sidang, dengan Claude sebagai dosen penguji.",
+  "Ingat, tetap tulis dengan kata-katamu sendiri, dan cek sumber aslinya. Simpan video ini, dan follow untuk tips lainnya!"
+];
+const DEF = {segs:[[0,5.6],[5.6,14.2],[14.2,21.6],[21.6,29.2],[29.2,37.8],[37.8,47.8],[47.8,55.2]], total:56.2};
+const T = window.TIMING || DEF; window.SEGS = T.segs; window.TOTAL = T.total;
+const segStart = i => T.segs[i][0];
+const segEnd = i => i < T.segs.length-1 ? T.segs[i+1][0] : T.total;
+const segDur = i => segEnd(i) - segStart(i);
+
+// ===================== palette (one controlled set) =====================
+const INK='#15130F', CREAM='#F3EEE4', CORAL='#FF5A3C', COBALT='#2B4BDB', MUSTARD='#F2B705', GREEN='#1F7A5C';
+// per scene: [field, hero/text, accent]
+const PAL = [[CREAM,INK,CORAL],[MUSTARD,INK,CREAM],[COBALT,CREAM,MUSTARD],[INK,CREAM,CORAL],[CORAL,INK,CREAM],[GREEN,CREAM,MUSTARD],[CREAM,INK,COBALT]];
+
+// ===================== shapes (400x400 box, single closed paths) =====================
+function circlePath(cx,cy,r,n=72){let d='';for(let i=0;i<n;i++){const a=-Math.PI/2+i/n*Math.PI*2;d+=(i?'L':'M')+(cx+r*Math.cos(a)).toFixed(2)+','+(cy+r*Math.sin(a)).toFixed(2);}return d+'Z';}
+function capsule(x1,y1,x2,y2,w){const a=Math.atan2(y2-y1,x2-x1),n=a+Math.PI/2,r=w/2;let d='';const pts=[];
+  for(let i=0;i<=18;i++){const t=n+Math.PI*i/18;pts.push([x2+r*Math.cos(t-Math.PI),y2+r*Math.sin(t-Math.PI)]);}
+  for(let i=0;i<=18;i++){const t=n+Math.PI*i/18;pts.push([x1+r*Math.cos(t),y1+r*Math.sin(t)]);}
+  pts.forEach((p,i)=>d+=(i?'L':'M')+p[0].toFixed(2)+','+p[1].toFixed(2));return d+'Z';}
+const SH = {
+  seed:   {m:circlePath(200,200,8),  s:circlePath(200,200,2)},
+  quest:  {m:'M118,150 C118,92 162,58 205,58 C256,58 292,94 292,140 C292,182 262,200 236,214 C223,222 222,230 222,246 L222,262 L172,262 L172,240 C172,210 186,195 211,180 C233,167 242,158 242,142 C242,120 226,106 204,106 C182,106 166,122 166,150 Z', s:circlePath(197,320,27)},
+  bubble: {m:'M92,84 H308 Q352,84 352,128 V236 Q352,280 308,280 H196 L128,334 L140,280 H92 Q48,280 48,236 V128 Q48,84 92,84 Z', s:capsule(130,182,270,182,34)},
+  bulb:   {m:'M200,48 C272,48 322,100 322,166 C322,210 298,236 277,256 C263,270 258,282 258,296 L142,296 C142,282 137,270 123,256 C102,236 78,210 78,166 C78,100 128,48 200,48 Z', s:'M152,312 H248 Q258,312 258,322 V338 Q258,362 234,362 H166 Q142,362 142,338 V322 Q142,312 152,312 Z'},
+  doc:    {m:'M104,44 H252 L316,108 V356 H104 Z', s:'M252,44 L316,108 H252 Z'},
+  book:   {m:'M200,112 C160,82 100,76 44,88 V318 C100,306 160,312 200,342 C240,312 300,306 356,318 V88 C300,76 240,82 200,112 Z', s:'M238,92 H276 V210 L257,192 L238,210 Z'},
+  chart:  {m:'M48,352 V236 H118 V304 H150 V164 H220 V304 H252 V96 H322 V304 H352 V352 Z', s:circlePath(287,52,20)},
+  lens:   {m:circlePath(172,172,118), s:capsule(262,262,338,338,50)},
+  mic:    {m:'M200,46 C236,46 262,72 262,108 V196 C262,232 236,258 200,258 C164,258 138,232 138,196 V108 C138,72 164,46 200,46 Z', s:'M188,286 H212 V326 H262 V352 H138 V326 H188 Z'},
+  toga:   {m:'M200,78 L372,160 L300,194 V270 C300,302 252,322 200,322 C148,322 100,302 100,270 V194 L28,160 Z', s:capsule(338,176,338,290,16)},
+};
+const MID = circlePath(200,200,128);
+
+// ===================== morph cue sheet =====================
+// each: landing time L, from, to, palette index after, wipe direction
+const MORPHS = [];
+function addM(L,a,b,pal,dir,dur=.78){MORPHS.push({L,a,b,pal,dir,dur});}
+addM(.42,'seed','quest',0,null,.42);
+addM(segStart(0)+segDur(0)*.55,'quest','bubble',0,null);
+for(let i=1;i<=6;i++){
+  const names=[null,'bulb','doc','book','chart','lens','toga'];
+  const from=[null,'bubble','bulb','doc','book','chart','mic'];
+  addM(segStart(i)+.36,from[i],names[i],i,['R','B','L','T','R','B'][i-1]);
+  if(i===5) addM(segStart(5)+segDur(5)*.6,'lens','mic',5,null);
+}
+MORPHS.forEach(m=>{
+  const opt={maxSegmentLength:3};
+  m.ia=flubber.interpolate(SH[m.a].m,MID,opt); m.ib=flubber.interpolate(MID,SH[m.b].m,opt);
+  // secondary: shrink to a dot halfway between, then grow
+  m.sa=flubber.interpolate(SH[m.a].s,circlePath(200,200,6),opt); m.sb=flubber.interpolate(circlePath(200,200,6),SH[m.b].s,opt);
+  m.t0=m.L-m.dur; m.rotDir = (MORPHS.indexOf(m)%2?1:-1);
+});
+window.CUES = MORPHS.map(m=>({land:+m.L.toFixed(3),start:+Math.max(0,m.t0).toFixed(3),scene:m.pal}));
+
+// ===================== easing =====================
+function bez(x1,y1,x2,y2){return function(x){let t=x;for(let i=0;i<8;i++){const cx=3*x1*t*(1-t)**2+3*x2*t*t*(1-t)+t**3-x;const d=3*x1*(1-t)**2+6*(x2-x1)*t*(1-t)+3*(1-x2)*t*t;if(Math.abs(d)<1e-6)break;t-=cx/d;t=Math.min(1,Math.max(0,t));}return 3*y1*t*(1-t)**2+3*y2*t*t*(1-t)+t**3;};}
+const EM = bez(.7,0,.3,1);           // the style's signature curve
+const EO = bez(.16,1,.3,1);          // text entrances
+const EI = bez(.7,0,.84,0);          // text exits
+const cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lin=(t,a,b)=>cl((t-a)/(b-a));
+const CUSH=3/30;
+function hex(c){return [1,3,5].map(i=>parseInt(c.slice(i,i+2),16));}
+function mix(a,b,p){const A=hex(a),B=hex(b);return 'rgb('+A.map((v,i)=>Math.round(v+(B[i]-v)*p)).join(',')+')';}
+
+// ===================== text cards =====================
+const CARDS=[
+  // [scene, tag, title lines, sub, inT, outT]  (times filled below)
+  {s:0,tag:'REELS · 5 LANGKAH',title:['Skripsi','mentok?'],sub:'Tenang, ada caranya.',in:()=>.5,out:()=>MORPHS[1].t0-.45},
+  {s:0,tag:'ASISTEN SKRIPSI',title:['Pakai','Claude AI'],sub:'Ini 5 langkahnya ↓',in:()=>MORPHS[1].L+.05,out:()=>segEnd(0)+.36-.78-.45},
+  {s:1,tag:'LANGKAH 01',title:['Cari ide','topik'],sub:'Minat + jurusan → ide judul & rumusan masalah'},
+  {s:2,tag:'LANGKAH 02',title:['Susun','kerangka'],sub:'Outline BAB I – V, alurnya jelas'},
+  {s:3,tag:'LANGKAH 03',title:['Pahami','literatur'],sub:'Unggah PDF jurnal → temuan & celah penelitian'},
+  {s:4,tag:'LANGKAH 04',title:['Olah','data'],sub:'Metode analisis · statistik · Python / R'},
+  {s:5,tag:'LANGKAH 05',title:['Review','tulisan'],sub:'Struktur · tata bahasa · logika argumen',out:()=>MORPHS[7].t0-.45},
+  {s:5,tag:'LANGKAH 05',title:['Latihan','sidang'],sub:'Claude jadi dosen penguji simulasi',in:()=>MORPHS[7].L+.05},
+  {s:6,tag:'INGAT',title:['Simpan','& follow'],sub:'Pakai kata-katamu sendiri & cek sumber asli.'},
+];
+CARDS.forEach(c=>{
+  if(!c.in) c.in=()=>segStart(c.s)+.42;
+  if(!c.out) c.out=()=> c.s<6 ? segEnd(c.s)+.36-.78-.45 : 1e9;
+  const el=document.createElement('div');el.className='card';
+  el.innerHTML=`<div class="line"><span class="tag">${c.tag}</span></div>`+
+    c.title.map(l=>`<div class="line title"><span>${l}</span></div>`).join('')+
+    `<div class="line sub"><span>${c.sub}</span></div>`;
+  document.getElementById('cards').appendChild(el);c.el=el;c.parts=[...el.querySelectorAll('.line>span')];
+});
+
+// ===================== captions =====================
+const capChunks=NARR.map(s=>{const w=s.split(/\s+/);const out=[];let cur=[];w.forEach(x=>{cur.push(x);if(cur.length>=5||/[.?!:,]$/.test(x)&&cur.length>=3){out.push(cur);cur=[];}});if(cur.length)out.push(cur);return out;});
+
+// ===================== render =====================
+const $=id=>document.getElementById(id);
+const pMain=$('pMain'),pSec=$('pSec'),hero=$('hero'),shadow=$('shadow');
+const HX=540,HY=720,S=1.22;
+function sceneAt(t){let si=0;T.segs.forEach((s,i)=>{if(t>=s[0])si=i;});return si;}
+
+window.renderAt=function(t){
+  // ---- current morph state ----
+  let cur=null, prev=MORPHS[0];
+  for(const m of MORPHS){ if(t>=m.t0) prev=m; }
+  const m=prev; const startEff=Math.max(0,m.t0);
+  const span=m.L-startEff;
+  // progress with 3-frame cushions on both ends
+  const p = cl((t-startEff-CUSH*.5)/(span-CUSH));
+  const q = EM(p);
+  let dMain,dSec;
+  if(t>=m.L){dMain=SH[m.b].m;dSec=SH[m.b].s;}
+  else if(q<.5){dMain=m.ia(q*2);dSec=m.sa(q*2);}
+  else {dMain=m.ib((q-.5)*2);dSec=m.sb((q-.5)*2);}
+  pMain.setAttribute('d',dMain);pSec.setAttribute('d',dSec);
+
+  // ---- squash / stretch / rotation / arc displacement ----
+  const inMorph=t<m.L;
+  const bell=inMorph?Math.sin(Math.PI*q):0;
+  const st=.14*bell;                                   // stretch while travelling
+  const tau=t-m.L; const settle=(t>=m.L&&tau<.7)? .1*Math.exp(-7*tau)*Math.sin(tau*22):0; // landing squash
+  const sx=(1-st+settle), sy=(1+st-settle);
+  const rot=m.rotDir*24*bell + (t>=m.L? m.rotDir*-6*Math.exp(-6*tau)*Math.sin(tau*16):0);
+  const dy=-46*bell;
+  const breathe=1+.012*Math.sin(t*2.2);
+  hero.setAttribute('transform',`translate(${HX},${HY+dy}) rotate(${rot.toFixed(3)}) scale(${(sx*S*breathe).toFixed(4)},${(sy*S*breathe).toFixed(4)}) translate(-200,-200)`);
+  shadow.setAttribute('rx',(150*sx*(1-.35*bell)).toFixed(2));shadow.setAttribute('cy',HY+275);
+  shadow.setAttribute('opacity',(.16*(1-.6*bell)).toFixed(3));
+
+  // ---- palette & color-field wipe ----
+  const prevPal = MORPHS.indexOf(m)>0 ? MORPHS[MORPHS.indexOf(m)-1].pal : 0;
+  const changes = m.dir && inMorph;
+  const newP=PAL[m.pal], oldP=PAL[ changes? prevPal : m.pal ];
+  const fA=$('fieldA'),fB=$('fieldB');
+  fA.style.background=oldP[0]; fB.style.background=newP[0];
+  if(changes){
+    const w=q; const off=(1-w)*100;
+    const tr={R:`translateX(${off}%)`,L:`translateX(${-off}%)`,B:`translateY(${off}%)`,T:`translateY(${-off}%)`}[m.dir];
+    fB.style.transform=tr;
+  } else fB.style.transform='none';
+  const cp = changes ? (q>=.5?1:0) : 1;
+  const heroC=mix(oldP[1],newP[1],cp), accC=mix(oldP[2],newP[2],cp), fieldC=mix(oldP[0],newP[0],cp);
+  pMain.setAttribute('fill',heroC);pSec.setAttribute('fill',accC);
+  shadow.setAttribute('fill',oldP===newP?newP[1]:heroC);
+
+  // ---- HUD ----
+  const si=sceneAt(t);
+  const txt=PAL[si][1];
+  $('hud').style.color=heroC;$('hud').style.opacity=.75;
+  $('cnt').textContent=(si>=1&&si<=5? '0'+si : si===0?'00':'✓')+' / 05';
+  [...$('dots').children].forEach((d,i)=>{d.style.background=heroC;d.style.opacity=(i<si||si===6)?1:.22;});
+  $('prog').style.background=accC;$('prog').style.width=(t/T.total*100)+'%';
+
+  // ---- text cards: masked slide up in, slide up out ----
+  CARDS.forEach(c=>{
+    const a=c.in(),b=c.out();
+    const vis=t>a-.01&&t<b+.6;
+    c.el.style.display=vis?'block':'none'; if(!vis)return;
+    c.el.style.color=PAL[c.s][1];
+    c.parts.forEach((p,k)=>{
+      const pin=EO(lin(t,a+k*.07,a+k*.07+.55));
+      const pout=EI(lin(t,b+k*.04,b+k*.04+.32));
+      p.style.transform=`translateY(${(1-pin)*110 - pout*110}%)`;
+    });
+    c.parts[0].style.color=PAL[c.s][2]===CREAM&&PAL[c.s][0]===MUSTARD?INK:PAL[c.s][2];
+  });
+
+  // ---- captions ----
+  const cap=$('cap'); let ci=-1;T.segs.forEach((s,i)=>{if(t>=s[0]&&t<s[1])ci=i;});
+  if(ci<0){cap.innerHTML='';}
+  else{
+    const [a,b]=T.segs[ci];const chunks=capChunks[ci];const all=chunks.flat();
+    const wi=Math.floor(cl((t-a)/((b-a)*.94),0,.9999)*all.length);
+    let acc=0,k=0,inC=0;for(let j=0;j<chunks.length;j++){if(wi<acc+chunks[j].length){k=j;inC=wi-acc;break;}acc+=chunks[j].length;}
+    const P=[fieldC,heroC];
+    cap.innerHTML=chunks[k].map((w,j)=>j===inC?`<span style="background:${P[1]};color:${P[0]}">${w}</span>`:`<span style="color:${P[1]};opacity:${j<inC?1:.38}">${w}</span>`).join('');
+  }
+  // tassel sway on the final hold (living end frame)
+  if(m.b==='toga'&&t>=m.L){pSec.setAttribute('transform',`rotate(${(5*Math.sin((t-m.L)*2.4)).toFixed(3)} 338 176)`);} else pSec.removeAttribute('transform');
+};
+renderAt(window.START_T||0);
+</script>
+</body>
+</html>
